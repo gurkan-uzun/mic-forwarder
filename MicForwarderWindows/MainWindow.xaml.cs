@@ -55,12 +55,15 @@ namespace MicForwarderWindows
             }
         }
 
-        private void Connect(int deviceIndex)
+        private async void Connect(int deviceIndex)
         {
             try
             {
                 UpdateStatus("Starting USB Tunnel...");
                 _tunnelManager.StartTunnel(12345, 12345);
+
+                // Give iproxy a second to start up and bind the local port
+                await System.Threading.Tasks.Task.Delay(1000);
 
                 UpdateStatus("Connecting to iPhone...");
                 _audioReceiver.StartReceiving(deviceIndex);
