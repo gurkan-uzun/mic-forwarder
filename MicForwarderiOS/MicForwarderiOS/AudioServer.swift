@@ -10,6 +10,7 @@ class AudioServer: ObservableObject {
     @Published var currentDB: Float = -120.0 // dB readout
     @Published var noiseGateThreshold: Float = 0.01 // Noise Gate lower limit
     @Published var maxVolumeCutoff: Float = 1.0 // Loud noise upper limit
+    @Published var microphoneGain: Float = 1.0 // Digital Amplifier up to 20x
     
     private let engine = AVAudioEngine()
     private var listener: NWListener?
@@ -124,15 +125,28 @@ class AudioServer: ObservableObject {
                     converter.convert(to: outBuffer, error: &error, withInputFrom: inputBlock)
                     
                     if let channelData = outBuffer.int16ChannelData?[0] {
-                        let dataLength = Int(outBuffer.frameLength) * MemoryLayout<Int16>.size
+                        let dataLength = Int(outBuffer.frameLength)
+                        
+                        // Apply Digital Gain (Amplifier)
+                        let gain = self.microphoneGain
+                        if gain > 1.0 {
+                            for i in 0..<dataLength {
+                                let amplified = Float(channelData[i]) * gain
+                                // Clamp to prevent integer overflow (which sounds like horrible static)
+                                let clamped = min(max(amplified, Float(Int16.min)), Float(Int16.max))
+                                channelData[i] = Int16(clamped)
+                            }
+                        }
+                        
+                        let dataLengthInBytes = dataLength * MemoryLayout<Int16>.size
                         
                         let data: Data
                         if avg < self.noiseGateThreshold || avg > self.maxVolumeCutoff {
                             // Noise Gate or Loud Cutoff active: Send perfect silence
-                            data = Data(count: dataLength)
+                            data = Data(count: dataLengthInBytes)
                         } else {
                             // Threshold met: Send the actual microphone data
-                            data = Data(bytes: channelData, count: dataLength)
+                            data = Data(bytes: channelData, count: dataLengthInBytes)
                         }
                         
                         self.activeConnection?.send(content: data, completion: .contentProcessed({ sendError in

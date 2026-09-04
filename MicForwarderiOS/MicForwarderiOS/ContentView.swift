@@ -42,6 +42,15 @@ struct ContentView: View {
                     .foregroundColor(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? .red : .green)
                 
                 VStack(spacing: 15) {
+                    // Digital Amplifier (Gain)
+                    VStack(spacing: 5) {
+                        Text("Microphone Boost: \(Int(audioServer.microphoneGain))x")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Slider(value: $audioServer.microphoneGain, in: 1.0...20.0, step: 1.0)
+                            .accentColor(.purple)
+                    }
+                    
                     // Low Noise Gate Control
                     VStack(spacing: 5) {
                         Text("Mute quiet sounds below: \(String(format: "%.3f", audioServer.noiseGateThreshold))")
