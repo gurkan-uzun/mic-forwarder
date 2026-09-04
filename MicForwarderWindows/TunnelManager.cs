@@ -12,11 +12,11 @@ namespace MicForwarderWindows
         {
             StopTunnel();
 
-            // Note: This assumes iproxy.exe is in the same directory or in PATH.
-            // In a real release, you'd bundle iproxy.exe with the application.
+            string iproxyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "iproxy.exe");
+
             var startInfo = new ProcessStartInfo
             {
-                FileName = "iproxy.exe",
+                FileName = iproxyPath,
                 Arguments = $"{localPort} {remotePort}",
                 UseShellExecute = false,
                 CreateNoWindow = true,
