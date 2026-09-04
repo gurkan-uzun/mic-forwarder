@@ -19,7 +19,10 @@ class AudioServer: ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            // .videoRecording mode disables aggressive noise cancellation and selects a better microphone.
+            try session.setCategory(.record, mode: .videoRecording, options: [.allowBluetoothHFP])
+            // Force hardware to 48kHz to perfectly match our Windows receiver without resampling
+            try session.setPreferredSampleRate(48000.0)
             try session.setActive(true)
         } catch {
             print("Failed to set audio session category: \(error)")
