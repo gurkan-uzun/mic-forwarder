@@ -10,7 +10,8 @@ class AudioServer: ObservableObject {
     @Published var currentDB: Float = -120.0 // dB readout
     @Published var noiseGateThreshold: Float = 0.01 // Noise Gate lower limit
     @Published var maxVolumeCutoff: Float = 1.0 // Loud noise upper limit
-    @Published var microphoneGain: Float = 1.0 // Digital Amplifier up to 20x
+    @Published var microphoneGain: Float = 1.0 // Digital Amplifier up to 10x
+    @Published var localIP: String = "Fetching IP..."
     
     private let engine = AVAudioEngine()
     private var listener: NWListener?
@@ -20,6 +21,7 @@ class AudioServer: ObservableObject {
     
     init() {
         setupSession()
+        fetchLocalIP()
     }
     
     private func setupSession() {
@@ -279,6 +281,38 @@ class AudioServer: ObservableObject {
             self.isRunning = false
             self.connectionStatus = "Disconnected"
             self.volumeLevel = 0
+        }
+    }
+    
+    private func fetchLocalIP() {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        
+        if getifaddrs(&ifaddr) == 0 {
+            var ptr = ifaddr
+            while ptr != nil {
+                defer { ptr = ptr?.pointee.ifa_next }
+                
+                guard let interface = ptr?.pointee else { continue }
+                let addrFamily = interface.ifa_addr.pointee.sa_family
+                
+                if addrFamily == UInt8(AF_INET) {
+                    let name = String(cString: interface.ifa_name)
+                    if name == "en0" { // Wi-Fi interface
+                        var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                        getnameinfo(interface.ifa_addr, socklen_t(interface.ifa_addr.pointee.sa_len),
+                                    &hostname, socklen_t(hostname.count),
+                                    nil, socklen_t(0), NI_NUMERICHOST)
+                        address = String(cString: hostname)
+                        break
+                    }
+                }
+            }
+            freeifaddrs(ifaddr)
+        }
+        
+        DispatchQueue.main.async {
+            self.localIP = address ?? "Wi-Fi Disconnected"
         }
     }
 }

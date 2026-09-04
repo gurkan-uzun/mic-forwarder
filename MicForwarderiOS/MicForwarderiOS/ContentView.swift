@@ -12,9 +12,8 @@ struct ContentView: View {
     @StateObject private var audioServer = AudioServer()
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                Text("Mic Forwarder")
+        VStack(spacing: 15) {
+            Text("Mic Forwarder")
                     .font(.largeTitle)
                     .bold()
                     .padding(.top, 10)
@@ -23,6 +22,10 @@ struct ContentView: View {
                 Text(audioServer.connectionStatus)
                     .foregroundColor(audioServer.connectionStatus.contains("Connected") ? .green : .secondary)
                     .font(.headline)
+                
+                Text("Wi-Fi IP: \(audioServer.localIP)")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
                 
                 // Microphone Volume Indicator
                 ZStack(alignment: .bottom) {
@@ -105,10 +108,8 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
                     .padding(.top, 5)
             }
-            .padding(.bottom, 20)
         }
     }
-}
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
