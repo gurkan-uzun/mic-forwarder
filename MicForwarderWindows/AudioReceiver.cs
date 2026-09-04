@@ -43,8 +43,8 @@ namespace MicForwarderWindows
                 _waveOut = new WaveOutEvent 
                 { 
                     DeviceNumber = deviceNumber,
-                    DesiredLatency = 50, // Default is 300ms. Lowering to 50ms for real-time audio.
-                    NumberOfBuffers = 2
+                    DesiredLatency = 100, // Increased slightly from 50 to stop audio crackling/underruns
+                    NumberOfBuffers = 3
                 };
                 _waveOut.Init(_waveProvider);
                 _waveOut.Play();
@@ -75,6 +75,13 @@ namespace MicForwarderWindows
                         OnStatusChanged?.Invoke("Connection closed by iPhone.");
                         break; // Connection closed
                     }
+                    
+                    // Critical: If the buffer grows too large (e.g. due to startup lag), clear it to kill the delay
+                    if (_waveProvider != null && _waveProvider.BufferedDuration.TotalMilliseconds > 150)
+                    {
+                        _waveProvider.ClearBuffer();
+                    }
+
                     _waveProvider?.AddSamples(buffer, 0, bytesRead);
                 }
             }
