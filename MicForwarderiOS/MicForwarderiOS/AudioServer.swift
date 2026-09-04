@@ -142,17 +142,19 @@ class AudioServer: ObservableObject {
             engine.attach(micMixerNode)
             engine.attach(customMixerNode)
             
-            // Connect the chain: input -> pitch -> distortion -> delay -> reverb -> eq
-            engine.connect(inputNode, to: pitchNode, format: inputFormat)
+            // Connect the chain: input -> micMixer -> pitch -> distortion -> delay -> reverb -> eq -> customMixer
+            engine.connect(inputNode, to: micMixerNode, format: inputFormat)
+            engine.connect(micMixerNode, to: pitchNode, format: inputFormat)
             engine.connect(pitchNode, to: distortionNode, format: inputFormat)
             engine.connect(distortionNode, to: delayNode, format: inputFormat)
             engine.connect(delayNode, to: reverbNode, format: inputFormat)
             engine.connect(reverbNode, to: eqNode, format: inputFormat)
+            engine.connect(eqNode, to: customMixerNode, format: inputFormat)
             
-            // Route through micMixerNode so we can mute the mic independently of the soundboard
-            engine.connect(eqNode, to: micMixerNode, format: inputFormat)
-            engine.connect(micMixerNode, to: customMixerNode, format: inputFormat)
-            engine.connect(playerNode, to: customMixerNode, format: inputFormat)
+            // Connect player node directly to customMixer
+            engine.connect(playerNode, to: customMixerNode, format: nil)
+            
+            // Output to main mixer (which is muted to prevent speaker feedback)
             engine.connect(customMixerNode, to: mainMixer, format: inputFormat)
             
             // Important: mute output so we don't cause feedback from the speaker
