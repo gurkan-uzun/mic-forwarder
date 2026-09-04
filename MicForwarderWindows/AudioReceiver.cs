@@ -26,6 +26,7 @@ namespace MicForwarderWindows
             {
                 Logger.Log($"Connecting TCP Client to 127.0.0.1:12345...");
                 _client = new TcpClient();
+                _client.NoDelay = true; // Disable Nagle's algorithm for instant packet transmission
                 _client.Connect("127.0.0.1", 12345);
                 _stream = _client.GetStream();
                 Logger.Log("TCP Client connected successfully.");
@@ -39,7 +40,12 @@ namespace MicForwarderWindows
                     DiscardOnBufferOverflow = true
                 };
 
-                _waveOut = new WaveOutEvent { DeviceNumber = deviceNumber };
+                _waveOut = new WaveOutEvent 
+                { 
+                    DeviceNumber = deviceNumber,
+                    DesiredLatency = 50, // Default is 300ms. Lowering to 50ms for real-time audio.
+                    NumberOfBuffers = 2
+                };
                 _waveOut.Init(_waveProvider);
                 _waveOut.Play();
 

@@ -38,7 +38,12 @@ class AudioServer: ObservableObject {
         do {
             // 1. Setup Network Listener on port 12345
             let port = NWEndpoint.Port(rawValue: 12345)!
-            listener = try NWListener(using: .tcp, on: port)
+            
+            let tcpOptions = NWProtocolTCP.Options()
+            tcpOptions.noDelay = true
+            let params = NWParameters(tls: nil, tcp: tcpOptions)
+            
+            listener = try NWListener(using: params, on: port)
             
             listener?.stateUpdateHandler = { [weak self] state in
                 DispatchQueue.main.async {
