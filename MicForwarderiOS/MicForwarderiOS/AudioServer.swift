@@ -71,7 +71,7 @@ class AudioServer: ObservableObject {
         do {
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .defaultToSpeaker])
             try session.setPreferredSampleRate(48000.0)
-            try session.setActive(true)
+            // We will activate the session only when startServer is called.
         } catch {
             print("Failed to set audio session category: \(error)")
         }
@@ -87,6 +87,8 @@ class AudioServer: ObservableObject {
     
     private func startServer() {
         do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            
             // Network Listeners
             listener = try NWListener(using: .tcp, on: 12345)
             listener?.newConnectionHandler = { [weak self] connection in
@@ -371,6 +373,7 @@ class AudioServer: ObservableObject {
     
     private func stopServer() {
         engine.stop()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         eqNode.removeTap(onBus: 0)
         listener?.cancel()
         listener = nil
