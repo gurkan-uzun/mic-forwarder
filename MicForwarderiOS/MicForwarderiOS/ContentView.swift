@@ -1,29 +1,41 @@
-//
-//  ContentView.swift
-//  MicForwarderiOS
-//
-//  Created by Gürkan uzun on 4.09.2026.
-//
-
 import SwiftUI
-import AVFoundation
 
 struct ContentView: View {
     @StateObject private var audioServer = AudioServer()
-    @State private var dragStartMaxVolume: Float? = nil
-    @State private var dragStartNoiseGate: Float? = nil
     
     var body: some View {
-        VStack(spacing: 15) {
-            Text("Mic Forwarder")
+        TabView {
+            // TAB 1: MIXER
+            MixerView(audioServer: audioServer)
+                .tabItem {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("Mixer")
+                }
+            
+            // TAB 2: EFFECTS
+            EffectsView(audioServer: audioServer)
+                .tabItem {
+                    Image(systemName: "wand.and.stars")
+                    Text("Effects")
+                }
+        }
+    }
+}
+
+// MARK: - Mixer Tab
+struct MixerView: View {
+    @ObservedObject var audioServer: AudioServer
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 15) {
+                Text("Mic Forwarder")
                     .font(.largeTitle)
                     .bold()
-                    .padding(.top, 10)
                 
-                // Connection Status
                 Text(audioServer.connectionStatus)
-                    .foregroundColor(audioServer.connectionStatus.contains("Connected") ? .green : .secondary)
                     .font(.headline)
+                    .foregroundColor(audioServer.activeConnection != nil || audioServer.activeUDPConnection != nil ? .green : .red)
                 
                 Text("Wi-Fi IP: \(audioServer.localIP)")
                     .font(.subheadline)
@@ -140,25 +152,85 @@ struct ContentView: View {
                 
                 if #available(iOS 15.0, *) {
                     Button(action: {
-                        // Open the iOS System panel for Voice Isolation
                         if #available(iOS 16.4, *) {
                             AVCaptureDevice.showSystemUserInterface(.microphoneModes)
                         }
                     }) {
-                        Text("Enable Voice Isolation (System)")
-                            .font(.subheadline)
-                            .foregroundColor(.blue)
-                            .padding(.top, 5)
+                        HStack {
+                            Image(systemName: "waveform.and.mic")
+                            Text("Voice Isolation")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(20)
                     }
+                    .padding(.top, 10)
+                    .padding(.bottom, 20)
                 }
-                
-                Text("Port: 12345 (TCP & UDP)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.top, 5)
             }
+            .padding(.top, 20)
         }
     }
+}
+
+// MARK: - Effects Tab
+struct EffectsView: View {
+    @ObservedObject var audioServer: AudioServer
+    
+    // 2-column grid
+    let columns = [
+        GridItem(.flexible()),
+        GridItem(.flexible())
+    ]
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 15) {
+                    ForEach(VoiceFilter.allCases, id: \.self) { filter in
+                        Button(action: {
+                            audioServer.activeFilter = filter
+                        }) {
+                            VStack(spacing: 12) {
+                                Image(systemName: iconForFilter(filter))
+                                    .font(.system(size: 30))
+                                Text(filter.rawValue)
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 100)
+                            .foregroundColor(audioServer.activeFilter == filter ? .white : .primary)
+                            .background(audioServer.activeFilter == filter ? Color.blue : Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(20)
+                            .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Voice Filters")
+        }
+    }
+    
+    private func iconForFilter(_ filter: VoiceFilter) -> String {
+        switch filter {
+        case .normal: return "person.fill"
+        case .chipmunk: return "hare.fill"
+        case .monster: return "mustache.fill" // Or tortoise.fill
+        case .robot: return "cpu"
+        case .radio: return "antenna.radiowaves.left.and.right"
+        case .cave: return "globe.americas.fill"
+        case .alien: return "eye.trianglebadge.exclamationmark.fill"
+        case .vader: return "star.fill"
+        case .echo: return "waveform.path.ecg"
+        case .megaphone: return "megaphone.fill"
+        case .underwater: return "drop.fill"
+        case .demon: return "flame.fill"
+        }
+    }
+}
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
