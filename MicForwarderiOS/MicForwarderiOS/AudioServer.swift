@@ -19,7 +19,7 @@ class AudioServer: ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetooth, .defaultToSpeaker])
+            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
             try session.setActive(true)
         } catch {
             print("Failed to set audio session category: \(error)")
