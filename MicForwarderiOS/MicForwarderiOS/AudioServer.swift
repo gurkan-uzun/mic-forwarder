@@ -49,6 +49,8 @@ class AudioServer: ObservableObject {
     private let reverbNode = AVAudioUnitReverb()
     private let delayNode = AVAudioUnitDelay()
     private let eqNode = AVAudioUnitEQ(numberOfBands: 1)
+    private let playerNode = AVAudioPlayerNode()
+    private let customMixerNode = AVAudioMixerNode()
     
     private var listener: NWListener?
     private var udpListener: NWListener?
@@ -127,14 +129,19 @@ class AudioServer: ObservableObject {
             engine.attach(reverbNode)
             engine.attach(delayNode)
             engine.attach(eqNode)
+            engine.attach(playerNode)
+            engine.attach(customMixerNode)
             
-            // Connect the chain: input -> pitch -> distortion -> delay -> reverb -> eq -> mainMixer
+            // Connect the chain: input -> pitch -> distortion -> delay -> reverb -> eq
             engine.connect(inputNode, to: pitchNode, format: inputFormat)
             engine.connect(pitchNode, to: distortionNode, format: inputFormat)
             engine.connect(distortionNode, to: delayNode, format: inputFormat)
             engine.connect(delayNode, to: reverbNode, format: inputFormat)
             engine.connect(reverbNode, to: eqNode, format: inputFormat)
-            engine.connect(eqNode, to: mainMixer, format: inputFormat)
+            
+            engine.connect(eqNode, to: customMixerNode, format: inputFormat)
+            engine.connect(playerNode, to: customMixerNode, format: inputFormat)
+            engine.connect(customMixerNode, to: mainMixer, format: inputFormat)
             
             // Important: mute output so we don't cause feedback from the speaker
             mainMixer.outputVolume = 0.0
@@ -148,7 +155,7 @@ class AudioServer: ObservableObject {
             }
             
             // Install Tap on the EQ Node (the last node in our chain before the mixer)
-            eqNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+            customMixerNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
                 guard let self = self else { return }
                 self.processAudioBuffer(buffer: buffer, converter: converter, targetFormat: targetFormat)
             }
@@ -389,7 +396,7 @@ class AudioServer: ObservableObject {
     private func stopServer() {
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        eqNode.removeTap(onBus: 0)
+        customMixerNode.removeTap(onBus: 0)
         metricsListener?.cancel()
         metricsListener = nil
         metricsConnection?.cancel()
@@ -503,6 +510,36 @@ class AudioServer: ObservableObject {
             if error == nil {
                 self?.receiveMetricsLoop(on: connection)
             }
+        }
+    }
+    func playSound(name: String) {
+        guard let b64 = getSoundBase64(name: name),
+              let data = Data(base64Encoded: b64) else { return }
+        
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name).wav")
+        do {
+            try data.write(to: url)
+            let file = try AVAudioFile(forReading: url)
+            playerNode.scheduleFile(file, at: nil) {
+                print("Finished playing \(name)")
+            }
+            if !playerNode.isPlaying {
+                playerNode.play()
+            }
+        } catch {
+            print("Failed to play sound: \(error)")
+        }
+    }
+    
+    private func getSoundBase64(name: String) -> String? {
+        switch name {
+        case "airhorn": return SoundAssets.airhornBase64
+        case "boom": return SoundAssets.boomBase64
+        case "bruh": return SoundAssets.bruhBase64
+        case "cheer": return SoundAssets.cheerBase64
+        case "fart": return SoundAssets.fartBase64
+        case "sheesh": return SoundAssets.sheeshBase64
+        default: return nil
         }
     }
 }

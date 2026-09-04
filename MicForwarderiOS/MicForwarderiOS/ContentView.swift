@@ -20,7 +20,14 @@ struct ContentView: View {
                     Text("Effects")
                 }
                 
-            // TAB 3: SETTINGS
+            // TAB 3: SOUNDBOARD
+            SoundboardView(audioServer: audioServer)
+                .tabItem {
+                    Image(systemName: "speaker.wave.3.fill")
+                    Text("Soundboard")
+                }
+                
+            // TAB 4: SETTINGS
             AdvancedSettingsView(audioServer: audioServer)
                 .tabItem {
                     Image(systemName: "gearshape.fill")
@@ -267,6 +274,56 @@ struct AdvancedSettingsView: View {
             }
             .navigationTitle("Voice Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
+        }
+    }
+}
+
+// MARK: - Soundboard Tab
+struct SoundboardView: View {
+    @ObservedObject var audioServer: AudioServer
+    
+    let sounds = [
+        ("Airhorn", "airhorn", "megaphone.fill", Color.red),
+        ("Vine Boom", "boom", "explosion.fill", Color.orange),
+        ("Bruh", "bruh", "person.fill.questionmark", Color.blue),
+        ("Fart", "fart", "wind", Color.brown),
+        ("Cheer", "cheer", "hands.clap.fill", Color.green),
+        ("Sheesh", "sheesh", "flame.fill", Color.purple)
+    ]
+    
+    let columns = [
+        GridItem(.flexible()),
+        GridItem(.flexible())
+    ]
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 20) {
+                    ForEach(sounds, id: \.1) { sound in
+                        Button(action: {
+                            audioServer.playSound(name: sound.1)
+                        }) {
+                            VStack(spacing: 15) {
+                                Image(systemName: sound.2)
+                                    .font(.system(size: 40))
+                                    .foregroundColor(sound.3)
+                                Text(sound.0)
+                                    .font(.headline)
+                                    .bold()
+                                    .foregroundColor(.primary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 120)
+                            .background(Color(UIColor.secondarySystemGroupedBackground))
+                            .cornerRadius(20)
+                            .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
+                        }
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("Soundboard")
             .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
         }
     }
