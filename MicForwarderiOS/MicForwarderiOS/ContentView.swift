@@ -47,7 +47,7 @@ struct ContentView: View {
                         Text("Microphone Boost: \(Int(audioServer.microphoneGain))x")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Slider(value: $audioServer.microphoneGain, in: 1.0...20.0, step: 1.0)
+                        Slider(value: $audioServer.microphoneGain, in: 1.0...10.0, step: 1.0)
                             .accentColor(.purple)
                     }
                     
