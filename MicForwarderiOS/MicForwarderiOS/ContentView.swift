@@ -92,18 +92,32 @@ struct HomeView: View {
                     .bold()
                     .foregroundColor(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? .red : .green)
                 
-                // Start/Stop Button
-                Button(action: {
-                    audioServer.toggleServer()
-                }) {
-                    Text(audioServer.isRunning ? "Stop Streaming" : "Start Server")
-                        .font(.title2)
-                        .bold()
-                        .frame(width: 200, height: 60)
-                        .foregroundColor(.white)
-                        .background(audioServer.isRunning ? Color.red : Color.blue)
-                        .cornerRadius(30)
-                        .shadow(radius: 5)
+                // Controls
+                HStack(spacing: 20) {
+                    Button(action: {
+                        audioServer.toggleServer()
+                    }) {
+                        Text(audioServer.isRunning ? "Stop Streaming" : "Start Server")
+                            .font(.title2)
+                            .bold()
+                            .frame(width: 200, height: 60)
+                            .foregroundColor(.white)
+                            .background(audioServer.isRunning ? Color.red : Color.blue)
+                            .cornerRadius(30)
+                            .shadow(radius: 5)
+                    }
+                    
+                    Button(action: {
+                        audioServer.toggleMute()
+                    }) {
+                        Image(systemName: audioServer.isMuted ? "mic.slash.fill" : "mic.fill")
+                            .font(.title2)
+                            .frame(width: 60, height: 60)
+                            .foregroundColor(.white)
+                            .background(audioServer.isMuted ? Color.orange : Color.gray)
+                            .clipShape(Circle())
+                            .shadow(radius: 5)
+                    }
                 }
                 
                 if #available(iOS 15.0, *) {

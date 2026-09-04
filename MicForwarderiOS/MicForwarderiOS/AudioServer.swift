@@ -21,6 +21,8 @@ enum VoiceFilter: String, CaseIterable {
 
 class AudioServer: ObservableObject {
     @Published var isRunning = false
+    @Published var isMuted = false
+
     @Published var connectionStatus = "Disconnected"
     @Published var volumeLevel: Float = 0.0
     @Published var currentDB: Float = -120.0
@@ -51,6 +53,8 @@ class AudioServer: ObservableObject {
     private let eqNode = AVAudioUnitEQ(numberOfBands: 1)
     private let playerNode = AVAudioPlayerNode()
     private let customMixerNode = AVAudioMixerNode()
+    private let micMixerNode = AVAudioMixerNode()
+
     
     private var listener: NWListener?
     private var udpListener: NWListener?
@@ -88,6 +92,11 @@ class AudioServer: ObservableObject {
         }
     }
     
+    func toggleMute() {
+        isMuted.toggle()
+        micMixerNode.outputVolume = isMuted ? 0.0 : 1.0
+    }
+
     func toggleServer() {
         if isRunning {
             stopServer()
@@ -130,6 +139,7 @@ class AudioServer: ObservableObject {
             engine.attach(delayNode)
             engine.attach(eqNode)
             engine.attach(playerNode)
+            engine.attach(micMixerNode)
             engine.attach(customMixerNode)
             
             // Connect the chain: input -> pitch -> distortion -> delay -> reverb -> eq
@@ -139,7 +149,9 @@ class AudioServer: ObservableObject {
             engine.connect(delayNode, to: reverbNode, format: inputFormat)
             engine.connect(reverbNode, to: eqNode, format: inputFormat)
             
-            engine.connect(eqNode, to: customMixerNode, format: inputFormat)
+            // Route through micMixerNode so we can mute the mic independently of the soundboard
+            engine.connect(eqNode, to: micMixerNode, format: inputFormat)
+            engine.connect(micMixerNode, to: customMixerNode, format: inputFormat)
             engine.connect(playerNode, to: customMixerNode, format: inputFormat)
             engine.connect(customMixerNode, to: mainMixer, format: inputFormat)
             
