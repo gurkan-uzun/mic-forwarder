@@ -2,6 +2,7 @@ import Foundation
 import Network
 import AVFoundation
 import Accelerate
+import Combine
 
 enum VoiceFilter: String, CaseIterable {
     case normal = "Normal"
@@ -51,8 +52,8 @@ class AudioServer: ObservableObject {
     
     private var listener: NWListener?
     private var udpListener: NWListener?
-    private var activeConnection: NWConnection?
-    private var activeUDPConnection: NWConnection?
+    var activeConnection: NWConnection?
+    var activeUDPConnection: NWConnection?
     
     init() {
         setupSession()
