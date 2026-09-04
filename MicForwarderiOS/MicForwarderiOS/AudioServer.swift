@@ -130,8 +130,16 @@ class AudioServer: ObservableObject {
                 switch state {
                 case .ready:
                     self?.connectionStatus = "Connected to Windows PC"
-                case .failed(let error), .cancelled:
-                    print("Connection ended: \(error?.localizedDescription ?? "cancelled")")
+                case .failed(let error):
+                    print("Connection failed: \(error.localizedDescription)")
+                    self?.activeConnection = nil
+                    if self?.isRunning == true {
+                        self?.connectionStatus = "Listening on port 12345..."
+                    } else {
+                        self?.connectionStatus = "Disconnected"
+                    }
+                case .cancelled:
+                    print("Connection cancelled")
                     self?.activeConnection = nil
                     if self?.isRunning == true {
                         self?.connectionStatus = "Listening on port 12345..."
