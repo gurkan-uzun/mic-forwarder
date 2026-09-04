@@ -65,8 +65,15 @@ class AudioServer: ObservableObject {
             let inputFormat = inputNode.inputFormat(forBus: 0)
             
             // Convert to 48kHz, 16-bit Mono PCM (Standard for raw audio transport)
-            let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000.0, channels: 1, interleaved: true)!
-            let converter = AVAudioConverter(from: inputFormat, to: targetFormat)!
+            guard let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000.0, channels: 1, interleaved: true) else {
+                self.connectionStatus = "Failed to create target audio format"
+                return
+            }
+            
+            guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+                self.connectionStatus = "Audio format conversion not supported on this device"
+                return
+            }
             
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
                 guard let self = self else { return }
