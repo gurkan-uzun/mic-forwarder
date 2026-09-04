@@ -7,7 +7,8 @@ class AudioServer: ObservableObject {
     @Published var isRunning = false
     @Published var connectionStatus = "Disconnected"
     @Published var volumeLevel: Float = 0.0
-    @Published var noiseGateThreshold: Float = 0.01 // Noise Gate threshold
+    @Published var noiseGateThreshold: Float = 0.01 // Noise Gate lower limit
+    @Published var maxVolumeCutoff: Float = 1.0 // Loud noise upper limit
     
     private let engine = AVAudioEngine()
     private var listener: NWListener?
@@ -122,8 +123,8 @@ class AudioServer: ObservableObject {
                         let dataLength = Int(outBuffer.frameLength) * MemoryLayout<Int16>.size
                         
                         let data: Data
-                        if avg < self.noiseGateThreshold {
-                            // Noise Gate active: Send perfect silence
+                        if avg < self.noiseGateThreshold || avg > self.maxVolumeCutoff {
+                            // Noise Gate or Loud Cutoff active: Send perfect silence
                             data = Data(count: dataLength)
                         } else {
                             // Threshold met: Send the actual microphone data

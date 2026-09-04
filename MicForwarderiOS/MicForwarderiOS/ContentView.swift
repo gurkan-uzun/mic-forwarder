@@ -11,57 +11,73 @@ struct ContentView: View {
     @StateObject private var audioServer = AudioServer()
     
     var body: some View {
-        VStack(spacing: 30) {
-            Text("Mic Forwarder")
-                .font(.largeTitle)
-                .bold()
-            
-            // Connection Status
-            Text(audioServer.connectionStatus)
-                .foregroundColor(audioServer.connectionStatus.contains("Connected") ? .green : .secondary)
-                .font(.headline)
-            
-            // Microphone Volume Indicator
-            ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.gray.opacity(0.2))
-                    .frame(width: 40, height: 150)
-                
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.green)
-                    .frame(width: 40, height: 150 * CGFloat(min(audioServer.volumeLevel * 5, 1.0)))
-                    .animation(.linear(duration: 0.1), value: audioServer.volumeLevel)
-            }
-            .padding()
-            
-            // Noise Gate Control
-            VStack {
-                Text("Noise Gate Threshold: \(String(format: "%.3f", audioServer.noiseGateThreshold))")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Slider(value: $audioServer.noiseGateThreshold, in: 0...0.1, step: 0.001)
-                    .accentColor(.blue)
-            }
-            .padding(.horizontal)
-            
-            // Start/Stop Button
-            Button(action: {
-                audioServer.toggleServer()
-            }) {
-                Text(audioServer.isRunning ? "Stop Streaming" : "Start Server")
-                    .font(.title2)
+        ScrollView {
+            VStack(spacing: 20) {
+                Text("Mic Forwarder")
+                    .font(.largeTitle)
                     .bold()
-                    .frame(width: 200, height: 60)
-                    .foregroundColor(.white)
-                    .background(audioServer.isRunning ? Color.red : Color.blue)
-                    .cornerRadius(30)
+                    .padding(.top, 10)
+                
+                // Connection Status
+                Text(audioServer.connectionStatus)
+                    .foregroundColor(audioServer.connectionStatus.contains("Connected") ? .green : .secondary)
+                    .font(.headline)
+                
+                // Microphone Volume Indicator
+                ZStack(alignment: .bottom) {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 40, height: 150)
+                    
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.green)
+                        .frame(width: 40, height: 150 * CGFloat(min(audioServer.volumeLevel * 5, 1.0)))
+                        .animation(.linear(duration: 0.1), value: audioServer.volumeLevel)
+                }
+                .padding(.vertical, 10)
+                
+                VStack(spacing: 15) {
+                    // Low Noise Gate Control
+                    VStack(spacing: 5) {
+                        Text("Mute quiet sounds below: \(String(format: "%.3f", audioServer.noiseGateThreshold))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Slider(value: $audioServer.noiseGateThreshold, in: 0...0.1, step: 0.001)
+                            .accentColor(.blue)
+                    }
+                    
+                    // Loud Noise Cutoff Control
+                    VStack(spacing: 5) {
+                        Text("Mute loud sounds above: \(String(format: "%.3f", audioServer.maxVolumeCutoff))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Slider(value: $audioServer.maxVolumeCutoff, in: 0.0...1.0, step: 0.01)
+                            .accentColor(.orange)
+                    }
+                }
+                .padding(.horizontal, 30)
+                .padding(.bottom, 10)
+                
+                // Start/Stop Button
+                Button(action: {
+                    audioServer.toggleServer()
+                }) {
+                    Text(audioServer.isRunning ? "Stop Streaming" : "Start Server")
+                        .font(.title2)
+                        .bold()
+                        .frame(width: 200, height: 60)
+                        .foregroundColor(.white)
+                        .background(audioServer.isRunning ? Color.red : Color.blue)
+                        .cornerRadius(30)
+                }
+                
+                Text("Port: 12345 (TCP)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.top, 5)
             }
-            
-            Text("Port: 12345 (TCP)")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            .padding(.bottom, 20)
         }
-        .padding()
     }
 }
 
