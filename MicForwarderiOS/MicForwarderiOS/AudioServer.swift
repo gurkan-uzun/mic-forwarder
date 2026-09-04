@@ -14,7 +14,9 @@ class AudioServer: ObservableObject {
     
     private let engine = AVAudioEngine()
     private var listener: NWListener?
+    private var udpListener: NWListener?
     private var activeConnection: NWConnection?
+    private var activeUDPConnection: NWConnection?
     
     init() {
         setupSession()
@@ -72,6 +74,26 @@ class AudioServer: ObservableObject {
             
             listener?.start(queue: .global(qos: .userInitiated))
             
+            // 1b. Setup UDP Network Listener on port 12345 (For Wi-Fi mode)
+            let udpParams = NWParameters.udp
+            udpListener = try NWListener(using: udpParams, on: port)
+            udpListener?.stateUpdateHandler = { [weak self] state in
+                DispatchQueue.main.async {
+                    switch state {
+                    case .ready:
+                        print("UDP Listener ready")
+                    case .failed(let error):
+                        print("UDP Listener failed: \(error)")
+                    default:
+                        break
+                    }
+                }
+            }
+            udpListener?.newConnectionHandler = { [weak self] connection in
+                self?.handleNewUDPConnection(connection)
+            }
+            udpListener?.start(queue: .global(qos: .userInitiated))
+            
             // 2. Setup Audio Engine
             let inputNode = engine.inputNode
             
@@ -113,8 +135,8 @@ class AudioServer: ObservableObject {
                     }
                 }
                 
-                // Convert and send audio buffer if a Windows client is connected
-                if self.activeConnection?.state == .ready {
+                // Convert and send audio buffer if a Windows client is connected via TCP or UDP
+                if self.activeConnection?.state == .ready || self.activeUDPConnection?.state == .ready {
                     let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: buffer.frameCapacity)!
                     var error: NSError? = nil
                     let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
@@ -149,11 +171,13 @@ class AudioServer: ObservableObject {
                             data = Data(bytes: channelData, count: dataLengthInBytes)
                         }
                         
-                        self.activeConnection?.send(content: data, completion: .contentProcessed({ sendError in
-                            if let e = sendError {
-                                print("Network Send Error: \(e)")
-                            }
-                        }))
+                        if self.activeConnection?.state == .ready {
+                            self.activeConnection?.send(content: data, completion: .contentProcessed({ _ in }))
+                        }
+                        if self.activeUDPConnection?.state == .ready {
+                            // For UDP, we can use an unreliably ordered context, but standard is fine
+                            self.activeUDPConnection?.send(content: data, completion: .contentProcessed({ _ in }))
+                        }
                     }
                 }
             }
@@ -206,6 +230,41 @@ class AudioServer: ObservableObject {
         connection.start(queue: .global(qos: .userInitiated))
     }
     
+    private func handleNewUDPConnection(_ connection: NWConnection) {
+        if activeUDPConnection != nil {
+            activeUDPConnection?.cancel()
+        }
+        
+        activeUDPConnection = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            DispatchQueue.main.async {
+                switch state {
+                case .ready:
+                    self?.connectionStatus = "UDP Connected (Wi-Fi)"
+                case .failed(_), .cancelled:
+                    self?.activeUDPConnection = nil
+                    if self?.activeConnection == nil && self?.isRunning == true {
+                        self?.connectionStatus = "Listening on port 12345..."
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        connection.start(queue: .global(qos: .userInitiated))
+        
+        // Start receiving to keep the connection alive and clear the buffer
+        receiveUDPLoop(on: connection)
+    }
+    
+    private func receiveUDPLoop(on connection: NWConnection) {
+        connection.receiveMessage { [weak self] (content, context, isComplete, error) in
+            if error == nil {
+                self?.receiveUDPLoop(on: connection)
+            }
+        }
+    }
+    
     private func stopServer() {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
@@ -213,8 +272,14 @@ class AudioServer: ObservableObject {
         listener?.cancel()
         listener = nil
         
+        udpListener?.cancel()
+        udpListener = nil
+        
         activeConnection?.cancel()
         activeConnection = nil
+        
+        activeUDPConnection?.cancel()
+        activeUDPConnection = nil
         
         DispatchQueue.main.async {
             self.isRunning = false

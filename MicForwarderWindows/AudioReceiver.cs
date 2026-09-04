@@ -10,6 +10,9 @@ namespace MicForwarderWindows
     {
         private TcpClient? _client;
         private NetworkStream? _stream;
+        
+        private UdpClient? _udpClient;
+        
         private Thread? _receiveThread;
         private bool _isRunning;
         
@@ -98,11 +101,86 @@ namespace MicForwarderWindows
             }
         }
 
+        public void StartReceivingUDP(int deviceNumber, string ipAddress, int port)
+        {
+            if (_isRunning) return;
+
+            try
+            {
+                Logger.Log($"Starting UDP Client to connect to {ipAddress}:{port}...");
+                _udpClient = new UdpClient();
+                _udpClient.Connect(ipAddress, port);
+                
+                // Send handshake packet so the iPhone knows our IP and Port
+                byte[] handshake = System.Text.Encoding.ASCII.GetBytes("HELLO");
+                _udpClient.Send(handshake, handshake.Length);
+
+                // Setup NAudio exactly the same
+                var waveFormat = new WaveFormat(48000, 16, 1);
+                _waveProvider = new BufferedWaveProvider(waveFormat)
+                {
+                    BufferDuration = TimeSpan.FromSeconds(2),
+                    DiscardOnBufferOverflow = true
+                };
+
+                _waveOut = new WaveOutEvent 
+                { 
+                    DeviceNumber = deviceNumber,
+                    DesiredLatency = 60,
+                    NumberOfBuffers = 2
+                };
+                _waveOut.Init(_waveProvider);
+                _waveOut.Play();
+
+                _isRunning = true;
+                _receiveThread = new Thread(ReceiveUDPLoop) { IsBackground = true };
+                _receiveThread.Start();
+                
+                OnStatusChanged?.Invoke("Connected via UDP and streaming...");
+            }
+            catch (Exception ex)
+            {
+                OnStatusChanged?.Invoke($"UDP Connection failed: {ex.Message}");
+                StopReceiving();
+            }
+        }
+
+        private void ReceiveUDPLoop()
+        {
+            try
+            {
+                System.Net.IPEndPoint remoteEP = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+                while (_isRunning && _udpClient != null)
+                {
+                    byte[] data = _udpClient.Receive(ref remoteEP);
+                    
+                    if (_waveProvider != null && _waveProvider.BufferedDuration.TotalMilliseconds > 90)
+                    {
+                        _waveProvider.ClearBuffer();
+                    }
+
+                    _waveProvider?.AddSamples(data, 0, data.Length);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (_isRunning)
+                {
+                    OnStatusChanged?.Invoke($"UDP Stream error: {ex.Message}");
+                }
+            }
+            finally
+            {
+                StopReceiving();
+            }
+        }
+
         public void StopReceiving()
         {
             _isRunning = false;
             _stream?.Close();
             _client?.Close();
+            _udpClient?.Close();
             
             _waveOut?.Stop();
             _waveOut?.Dispose();

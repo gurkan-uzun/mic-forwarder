@@ -34,6 +34,20 @@ namespace MicForwarderWindows
                 DeviceComboBox.SelectedIndex = 0;
         }
 
+        private void TransportComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (WifiPanel == null) return;
+            
+            if (TransportComboBox.SelectedIndex == 1) // Wi-Fi (UDP)
+            {
+                WifiPanel.Visibility = Visibility.Visible;
+            }
+            else // USB (TCP)
+            {
+                WifiPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private void ConnectButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isConnected)
@@ -59,14 +73,31 @@ namespace MicForwarderWindows
         {
             try
             {
-                UpdateStatus("Starting USB Tunnel...");
-                _tunnelManager.StartTunnel(12345, 12345);
+                bool isWifiMode = TransportComboBox.SelectedIndex == 1;
 
-                // Give iproxy a second to start up and bind the local port
-                await System.Threading.Tasks.Task.Delay(1000);
+                if (isWifiMode)
+                {
+                    string ip = IpAddressTextBox.Text.Trim();
+                    if (string.IsNullOrEmpty(ip) || ip.EndsWith("."))
+                    {
+                        MessageBox.Show("Please enter a valid iPhone IP address.");
+                        return;
+                    }
 
-                UpdateStatus("Connecting to iPhone...");
-                _audioReceiver.StartReceiving(deviceIndex);
+                    UpdateStatus($"Connecting to {ip} via Wi-Fi (UDP)...");
+                    _audioReceiver.StartReceivingUDP(deviceIndex, ip, 12345);
+                }
+                else
+                {
+                    UpdateStatus("Starting USB Tunnel...");
+                    _tunnelManager.StartTunnel(12345, 12345);
+
+                    // Give iproxy a second to start up and bind the local port
+                    await System.Threading.Tasks.Task.Delay(1000);
+
+                    UpdateStatus("Connecting to iPhone via USB (TCP)...");
+                    _audioReceiver.StartReceiving(deviceIndex);
+                }
                 
                 _isConnected = true;
                 ConnectButton.Content = "Disconnect";
