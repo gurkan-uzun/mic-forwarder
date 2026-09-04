@@ -13,7 +13,8 @@ class AudioServer: ObservableObject {
     @Published var maxVolumeCutoff: Float = 1.0 // Loud noise upper limit
     @Published var microphoneGain: Float = 1.0 // Digital Amplifier up to 10x
     @Published var localIP: String = "Fetching IP..."
-    @Published var frequencyBuckets: [Float] = Array(repeating: 0.0, count: 20)
+    @Published var frequencyBuckets: [Float] = Array(repeating: 0.0, count: 40)
+    @Published var isVisualizerEnabled: Bool = true
     
     // FFT Properties
     private let fftSize: Int = 1024
@@ -139,55 +140,61 @@ class AudioServer: ObservableObject {
                     avg = sum / Float(actualFrameLength)
                     let db = avg > 0.000001 ? 20 * log10(avg) : -120.0
                     
-                    // Perform FFT
-                    var paddedData = [Float](repeating: 0.0, count: self.fftSize)
-                    let copyCount = min(actualFrameLength, self.fftSize)
-                    for i in 0..<copyCount {
-                        paddedData[i] = channelData[i]
-                    }
-                    
-                    var real = [Float](repeating: 0.0, count: self.fftSize / 2)
-                    var imag = [Float](repeating: 0.0, count: self.fftSize / 2)
-                    var splitComplex = DSPSplitComplex(realp: &real, imagp: &imag)
-                    
-                    paddedData.withUnsafeBufferPointer { ptr in
-                        ptr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: self.fftSize / 2) { complexPtr in
-                            vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(self.fftSize / 2))
+                    if self.isVisualizerEnabled {
+                        var paddedData = [Float](repeating: 0.0, count: self.fftSize)
+                        let copyCount = min(actualFrameLength, self.fftSize)
+                        for i in 0..<copyCount {
+                            paddedData[i] = channelData[i]
                         }
-                    }
-                    
-                    if let setup = self.fftSetup {
-                        vDSP_fft_zrip(setup, &splitComplex, 1, self.log2n, FFTDirection(FFT_FORWARD))
                         
-                        var magnitudes = [Float](repeating: 0.0, count: self.fftSize / 2)
-                        vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(self.fftSize / 2))
+                        var real = [Float](repeating: 0.0, count: self.fftSize / 2)
+                        var imag = [Float](repeating: 0.0, count: self.fftSize / 2)
+                        var splitComplex = DSPSplitComplex(realp: &real, imagp: &imag)
                         
-                        var normalizedMags = [Float](repeating: 0.0, count: self.fftSize / 2)
-                        var scalingFactor: Float = 1.0 / Float(self.fftSize * 2)
-                        vDSP_vsmul(magnitudes, 1, &scalingFactor, &normalizedMags, 1, vDSP_Length(self.fftSize / 2))
-                        vvsqrtf(&normalizedMags, normalizedMags, [Int32(self.fftSize / 2)])
-                        
-                        let binCount = self.fftSize / 2
-                        let binsPerBucket = binCount / 20
-                        var buckets = [Float](repeating: 0.0, count: 20)
-                        
-                        for i in 0..<20 {
-                            var maxMag: Float = 0.0
-                            let startBin = i * binsPerBucket
-                            let endBin = startBin + binsPerBucket
-                            for j in startBin..<endBin {
-                                if normalizedMags[j] > maxMag {
-                                    maxMag = normalizedMags[j]
-                                }
+                        paddedData.withUnsafeBufferPointer { ptr in
+                            ptr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: self.fftSize / 2) { complexPtr in
+                                vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(self.fftSize / 2))
                             }
-                            // Boost visualizer multiplier, max cap at 1.0
-                            buckets[i] = min(maxMag * 5.0, 1.0)
                         }
                         
+                        if let setup = self.fftSetup {
+                            vDSP_fft_zrip(setup, &splitComplex, 1, self.log2n, FFTDirection(FFT_FORWARD))
+                            
+                            var magnitudes = [Float](repeating: 0.0, count: self.fftSize / 2)
+                            vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(self.fftSize / 2))
+                            
+                            var normalizedMags = [Float](repeating: 0.0, count: self.fftSize / 2)
+                            var scalingFactor: Float = 1.0 / Float(self.fftSize * 2)
+                            vDSP_vsmul(magnitudes, 1, &scalingFactor, &normalizedMags, 1, vDSP_Length(self.fftSize / 2))
+                            vvsqrtf(&normalizedMags, normalizedMags, [Int32(self.fftSize / 2)])
+                            
+                            let binCount = self.fftSize / 2
+                            let binsPerBucket = binCount / 40
+                            var buckets = [Float](repeating: 0.0, count: 40)
+                            
+                            for i in 0..<40 {
+                                var maxMag: Float = 0.0
+                                let startBin = i * binsPerBucket
+                                let endBin = startBin + binsPerBucket
+                                for j in startBin..<endBin {
+                                    if normalizedMags[j] > maxMag {
+                                        maxMag = normalizedMags[j]
+                                    }
+                                }
+                                // Boost visualizer multiplier, max cap at 1.0
+                                buckets[i] = min(maxMag * 5.0, 1.0)
+                            }
+                            
+                            DispatchQueue.main.async {
+                                self.volumeLevel = avg
+                                self.currentDB = db
+                                self.frequencyBuckets = buckets
+                            }
+                        }
+                    } else {
                         DispatchQueue.main.async {
                             self.volumeLevel = avg
                             self.currentDB = db
-                            self.frequencyBuckets = buckets
                         }
                     }
                 }

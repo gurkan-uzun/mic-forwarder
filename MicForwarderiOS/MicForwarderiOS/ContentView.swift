@@ -27,18 +27,25 @@ struct ContentView: View {
                     .font(.subheadline)
                     .foregroundColor(.blue)
                 
-                // FFT Spectrum Visualizer
-                HStack(alignment: .bottom, spacing: 4) {
-                    ForEach(0..<20, id: \.self) { index in
-                        let value = CGFloat(audioServer.frequencyBuckets[index])
-                        Capsule()
-                            .fill(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? Color.gray : Color.green)
-                            .frame(width: 8, height: max(5, 100 * value))
-                            .animation(.linear(duration: 0.05), value: value)
+                if audioServer.isVisualizerEnabled {
+                    // FFT Spectrum Visualizer
+                    HStack(alignment: .center, spacing: 2) {
+                        ForEach(0..<40, id: \.self) { index in
+                            let value = CGFloat(audioServer.frequencyBuckets[index])
+                            Capsule()
+                                .fill(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? Color.gray : Color.green)
+                                .frame(width: 4, height: max(5, 100 * value))
+                                .animation(.linear(duration: 0.05), value: value)
+                        }
                     }
+                    .frame(height: 100)
+                    .padding(.vertical, 10)
                 }
-                .frame(height: 100)
-                .padding(.vertical, 10)
+                
+                Toggle("Show Visualizer (Uses CPU)", isOn: $audioServer.isVisualizerEnabled)
+                    .font(.caption)
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 10)
                 
                 Text("Live: \(String(format: "%.3f", audioServer.volumeLevel))  |  \(String(format: "%.1f", audioServer.currentDB)) dB")
                     .font(.subheadline)
