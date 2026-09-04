@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AVFoundation
 
 struct ContentView: View {
     @StateObject private var audioServer = AudioServer()
@@ -85,7 +86,21 @@ struct ContentView: View {
                         .cornerRadius(30)
                 }
                 
-                Text("Port: 12345 (TCP)")
+                if #available(iOS 15.0, *) {
+                    Button(action: {
+                        // Open the iOS System panel for Voice Isolation
+                        if #available(iOS 16.4, *) {
+                            AVCaptureDevice.showSystemUserInterface(.microphoneModes)
+                        }
+                    }) {
+                        Text("Enable Voice Isolation (System)")
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            .padding(.top, 5)
+                    }
+                }
+                
+                Text("Port: 12345 (TCP & UDP)")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .padding(.top, 5)

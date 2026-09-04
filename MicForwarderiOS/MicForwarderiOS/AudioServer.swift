@@ -29,6 +29,12 @@ class AudioServer: ObservableObject {
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .defaultToSpeaker])
             // Force hardware to 48kHz to perfectly match our Windows receiver without resampling
             try session.setPreferredSampleRate(48000.0)
+            
+            // Force iOS to use Voice Isolation at the hardware level (iOS 16.4+)
+            if #available(iOS 16.4, *) {
+                AVCaptureDevice.preferredMicrophoneMode = .voiceIsolation
+            }
+            
             try session.setActive(true)
         } catch {
             print("Failed to set audio session category: \(error)")
