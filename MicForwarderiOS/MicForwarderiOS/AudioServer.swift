@@ -21,6 +21,7 @@ enum VoiceFilter: String, CaseIterable {
 
 class AudioServer: ObservableObject {
     @Published var isRunning = false
+    private var isGraphBuilt = false
     @Published var isMuted = false
 
     @Published var connectionStatus = "Disconnected"
@@ -52,8 +53,12 @@ class AudioServer: ObservableObject {
     private let delayNode = AVAudioUnitDelay()
     private let eqNode = AVAudioUnitEQ(numberOfBands: 1)
     private let playerNode = AVAudioPlayerNode()
+    // micFeedPlayer is the loopback entry: inputNode is tapped (not connected),
+    // and captured buffers are scheduled here, which drives the effects chain.
+    // This avoids the iOS-forbidden "hardware input → AU effect" connection
+    // that causes the isInputConnToConverter crash.
+    private let micFeedPlayer = AVAudioPlayerNode()
     private let customMixerNode = AVAudioMixerNode()
-    private let micMixerNode = AVAudioMixerNode()
 
     
     private var listener: NWListener?
@@ -94,7 +99,7 @@ class AudioServer: ObservableObject {
     
     func toggleMute() {
         isMuted.toggle()
-        micMixerNode.outputVolume = isMuted ? 0.0 : 1.0
+        // Muting is handled in the tap callback by discarding audio data
     }
 
     func toggleServer() {
@@ -128,53 +133,79 @@ class AudioServer: ObservableObject {
             }
             udpListener?.start(queue: .global(qos: .userInitiated))
             
+            // ---------------------------------------------------------------
             // Audio Engine Pipeline
+            //
+            // KEY FIX: inputNode is NEVER connected to any node in the graph.
+            // Directly connecting inputNode → AVAudioUnit effect (pitchNode etc.)
+            // triggers a hidden format converter inside AVAudioEngine, causing:
+            //   "required condition is false: false == isInputConnToConverter"
+            //
+            // Instead: installTap on inputNode, schedule captured buffers onto
+            // micFeedPlayer, which drives the full effects chain without any
+            // hardware-input → audio-unit connection.
+            //
+            // Graph: micFeedPlayer → pitch → distortion → delay → reverb → eq
+            //              → customMixer ← playerNode (soundboard)
+            //              → mainMixer (muted, prevents speaker feedback)
+            //
+            // inputNode: tap only, zero graph connections.
+            // ---------------------------------------------------------------
             let inputNode = engine.inputNode
             let mainMixer = engine.mainMixerNode
-            let inputFormat = inputNode.inputFormat(forBus: 0)
+            let captureFormat = inputNode.inputFormat(forBus: 0)
             
-            engine.attach(pitchNode)
-            engine.attach(distortionNode)
-            engine.attach(reverbNode)
-            engine.attach(delayNode)
-            engine.attach(eqNode)
-            engine.attach(playerNode)
-            engine.attach(micMixerNode)
-            engine.attach(customMixerNode)
-            
-            // Connect the chain: input -> micMixer -> pitch -> distortion -> delay -> reverb -> eq -> customMixer
-            engine.connect(inputNode, to: micMixerNode, format: inputFormat)
-            engine.connect(micMixerNode, to: pitchNode, format: inputFormat)
-            engine.connect(pitchNode, to: distortionNode, format: inputFormat)
-            engine.connect(distortionNode, to: delayNode, format: inputFormat)
-            engine.connect(delayNode, to: reverbNode, format: inputFormat)
-            engine.connect(reverbNode, to: eqNode, format: inputFormat)
-            engine.connect(eqNode, to: customMixerNode, format: inputFormat)
-            
-            // Connect player node directly to customMixer
-            engine.connect(playerNode, to: customMixerNode, format: nil)
-            
-            // Output to main mixer (which is muted to prevent speaker feedback)
-            engine.connect(customMixerNode, to: mainMixer, format: inputFormat)
-            
-            // Important: mute output so we don't cause feedback from the speaker
-            mainMixer.outputVolume = 0.0
+            if !isGraphBuilt {
+                engine.attach(micFeedPlayer)
+                engine.attach(pitchNode)
+                engine.attach(distortionNode)
+                engine.attach(reverbNode)
+                engine.attach(delayNode)
+                engine.attach(eqNode)
+                engine.attach(playerNode)
+                engine.attach(customMixerNode)
+                
+                // micFeedPlayer (loopback) → effects chain → customMixer
+                engine.connect(micFeedPlayer, to: pitchNode, format: captureFormat)
+                engine.connect(pitchNode, to: distortionNode, format: captureFormat)
+                engine.connect(distortionNode, to: delayNode, format: captureFormat)
+                engine.connect(delayNode, to: reverbNode, format: captureFormat)
+                engine.connect(reverbNode, to: eqNode, format: captureFormat)
+                engine.connect(eqNode, to: customMixerNode, format: captureFormat)
+                
+                // Soundboard player also feeds into customMixer
+                engine.connect(playerNode, to: customMixerNode, format: captureFormat)
+                
+                // customMixer → mainMixer (muted — no speaker feedback)
+                engine.connect(customMixerNode, to: mainMixer, format: captureFormat)
+                mainMixer.outputVolume = 0.0
+                
+                isGraphBuilt = true
+            }
             
             applyFilterSettings()
             
             let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000.0, channels: 1, interleaved: false)!
-            guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            guard let networkConverter = AVAudioConverter(from: captureFormat, to: targetFormat) else {
                 self.connectionStatus = "Audio format conversion not supported"
                 return
             }
             
-            // Install Tap on the EQ Node (the last node in our chain before the mixer)
-            customMixerNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
+            // Tap inputNode directly (no graph connection needed).
+            // Schedule captured buffers on micFeedPlayer to push audio through the effects chain.
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: captureFormat) { [weak self] buffer, _ in
+                guard let self = self, !self.isMuted else { return }
+                self.micFeedPlayer.scheduleBuffer(buffer, completionHandler: nil)
+            }
+            
+            // Network tap: captures mic+effects+soundboard after the merge point
+            customMixerNode.installTap(onBus: 0, bufferSize: 1024, format: captureFormat) { [weak self] buffer, _ in
                 guard let self = self else { return }
-                self.processAudioBuffer(buffer: buffer, converter: converter, targetFormat: targetFormat)
+                self.processAudioBuffer(buffer: buffer, converter: networkConverter, targetFormat: targetFormat)
             }
             
             try engine.start()
+            micFeedPlayer.play() // Must be after engine.start()
             
             DispatchQueue.main.async {
                 self.isRunning = true
@@ -408,9 +439,11 @@ class AudioServer: ObservableObject {
     }
     
     private func stopServer() {
+        micFeedPlayer.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        customMixerNode.removeTap(onBus: 0)
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        customMixerNode.removeTap(onBus: 0)
         metricsListener?.cancel()
         metricsListener = nil
         metricsConnection?.cancel()
