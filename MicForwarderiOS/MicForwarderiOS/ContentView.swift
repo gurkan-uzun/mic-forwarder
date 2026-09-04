@@ -10,6 +10,8 @@ import AVFoundation
 
 struct ContentView: View {
     @StateObject private var audioServer = AudioServer()
+    @State private var dragStartMaxVolume: Float? = nil
+    @State private var dragStartNoiseGate: Float? = nil
     
     var body: some View {
         VStack(spacing: 15) {
@@ -28,18 +30,64 @@ struct ContentView: View {
                     .foregroundColor(.blue)
                 
                 if audioServer.isVisualizerEnabled {
-                    // FFT Spectrum Visualizer
-                    HStack(alignment: .center, spacing: 2) {
-                        ForEach(0..<40, id: \.self) { index in
-                            let value = CGFloat(audioServer.frequencyBuckets[index])
-                            Capsule()
-                                .fill(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? Color.gray : Color.green)
-                                .frame(width: 4, height: max(5, 100 * value))
-                                .animation(.linear(duration: 0.05), value: value)
+                    // FFT Spectrum Visualizer with Drag Handles
+                    ZStack(alignment: .top) {
+                        HStack(alignment: .center, spacing: 2) {
+                            ForEach(0..<40, id: \.self) { index in
+                                let value = CGFloat(audioServer.frequencyBuckets[index])
+                                Capsule()
+                                    .fill(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? Color.gray : Color.green)
+                                    .frame(width: 4, height: max(5, 100 * value))
+                                    .animation(.linear(duration: 0.05), value: value)
+                            }
                         }
+                        .frame(maxWidth: .infinity, maxHeight: 100)
+                        
+                        // Max Volume Cutoff Draggable Line (Orange)
+                        let yCutoff = 100.0 - (CGFloat(audioServer.maxVolumeCutoff) * 100.0)
+                        ZStack {
+                            Color.white.opacity(0.001) // Invisible hit area
+                            Rectangle().fill(Color.orange).frame(height: 2)
+                        }
+                        .frame(height: 30)
+                        .offset(y: yCutoff - 15)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    if dragStartMaxVolume == nil { dragStartMaxVolume = audioServer.maxVolumeCutoff }
+                                    let delta = -(value.translation.height / 100.0)
+                                    let newVal = CGFloat(dragStartMaxVolume!) + delta
+                                    audioServer.maxVolumeCutoff = Float(min(max(newVal, CGFloat(audioServer.noiseGateThreshold + 0.05)), 1.0))
+                                }
+                                .onEnded { _ in
+                                    dragStartMaxVolume = nil
+                                }
+                        )
+                        
+                        // Noise Gate Draggable Line (Blue)
+                        let yNoise = 100.0 - (CGFloat(audioServer.noiseGateThreshold) * 100.0)
+                        ZStack {
+                            Color.white.opacity(0.001) // Invisible hit area
+                            Rectangle().fill(Color.blue).frame(height: 2)
+                        }
+                        .frame(height: 30)
+                        .offset(y: yNoise - 15)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    if dragStartNoiseGate == nil { dragStartNoiseGate = audioServer.noiseGateThreshold }
+                                    let delta = -(value.translation.height / 100.0)
+                                    let newVal = CGFloat(dragStartNoiseGate!) + delta
+                                    audioServer.noiseGateThreshold = Float(max(min(newVal, CGFloat(audioServer.maxVolumeCutoff - 0.05)), 0.0))
+                                }
+                                .onEnded { _ in
+                                    dragStartNoiseGate = nil
+                                }
+                        )
                     }
                     .frame(height: 100)
                     .padding(.vertical, 10)
+                    .clipped() // Prevent lines from extending outside the visualizer box
                 }
                 
                 Toggle("Show Visualizer (Uses CPU)", isOn: $audioServer.isVisualizerEnabled)
