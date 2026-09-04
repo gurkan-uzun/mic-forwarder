@@ -90,6 +90,7 @@ namespace MicForwarderWindows
 
         private void UpdateStatus(string status)
         {
+            Logger.Log($"[Status] {status}");
             Dispatcher.Invoke(() =>
             {
                 StatusText.Text = status;

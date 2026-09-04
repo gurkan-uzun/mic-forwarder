@@ -24,10 +24,11 @@ namespace MicForwarderWindows
 
             try
             {
+                Logger.Log($"Connecting TCP Client to 127.0.0.1:12345...");
                 _client = new TcpClient();
-                // Connect to localhost where iproxy is forwarding the port
                 _client.Connect("127.0.0.1", 12345);
                 _stream = _client.GetStream();
+                Logger.Log("TCP Client connected successfully.");
 
                 // 48kHz, 16-bit, Mono (Must match iPhone's targetFormat)
                 var waveFormat = new WaveFormat(48000, 16, 1);

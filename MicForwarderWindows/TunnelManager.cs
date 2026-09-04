@@ -27,12 +27,22 @@ namespace MicForwarderWindows
 
             try
             {
+                Logger.Log($"Starting tunnel with {iproxyPath} {localPort} {remotePort}");
                 _iproxyProcess = Process.Start(startInfo);
-                Debug.WriteLine("iproxy tunnel started.");
+                
+                if (_iproxyProcess != null)
+                {
+                    _iproxyProcess.OutputDataReceived += (sender, args) => { if (!string.IsNullOrEmpty(args.Data)) Logger.Log($"[iproxy output] {args.Data}"); };
+                    _iproxyProcess.ErrorDataReceived += (sender, args) => { if (!string.IsNullOrEmpty(args.Data)) Logger.Log($"[iproxy error] {args.Data}"); };
+                    _iproxyProcess.BeginOutputReadLine();
+                    _iproxyProcess.BeginErrorReadLine();
+                }
+
+                Logger.Log("iproxy tunnel started.");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to start iproxy: {ex.Message}. Make sure iproxy.exe is available.");
+                Logger.Log($"Failed to start iproxy: {ex.Message}");
                 throw;
             }
         }
@@ -41,10 +51,11 @@ namespace MicForwarderWindows
         {
             if (_iproxyProcess != null && !_iproxyProcess.HasExited)
             {
+                Logger.Log("Stopping iproxy tunnel...");
                 _iproxyProcess.Kill();
                 _iproxyProcess.Dispose();
                 _iproxyProcess = null;
-                Debug.WriteLine("iproxy tunnel stopped.");
+                Logger.Log("iproxy tunnel stopped.");
             }
         }
     }
