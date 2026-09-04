@@ -49,6 +49,16 @@ struct HomeView: View {
                 Text("Wi-Fi IP: \(audioServer.localIP)")
                     .font(.subheadline)
                     .foregroundColor(.blue)
+                
+                if audioServer.activeUDPConnection != nil || audioServer.activeConnection != nil {
+                    HStack(spacing: 15) {
+                        Text("Ping: \(audioServer.pingMS) ms")
+                        Text("Loss: \(String(format: "%.1f", audioServer.packetLossPercent))%")
+                    }
+                    .font(.caption)
+                    .foregroundColor(audioServer.pingMS > 100 || audioServer.packetLossPercent > 5.0 ? .orange : .green)
+                    .padding(.top, 2)
+                }
             }
             .padding(.top, 40)
             

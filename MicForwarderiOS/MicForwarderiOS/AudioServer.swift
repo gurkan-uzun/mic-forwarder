@@ -54,6 +54,15 @@ class AudioServer: ObservableObject {
     private var udpListener: NWListener?
     var activeConnection: NWConnection?
     var activeUDPConnection: NWConnection?
+    // Metrics
+    private var metricsListener: NWListener?
+    private var metricsConnection: NWConnection?
+    private var metricsTimer: Timer?
+    @Published var pingMS: Int = 0
+    @Published var packetLossPercent: Double = 0.0
+    private var pingsSent: Int = 0
+    private var pingsReceived: Int = 0
+
     
     init() {
         setupSession()
@@ -88,6 +97,12 @@ class AudioServer: ObservableObject {
     private func startServer() {
         do {
             try AVAudioSession.sharedInstance().setActive(true)
+            metricsListener = try NWListener(using: .udp, on: 12346)
+            metricsListener?.newConnectionHandler = { [weak self] connection in
+                self?.handleMetricsConnection(connection)
+            }
+            metricsListener?.start(queue: .global(qos: .userInitiated))
+
             
             // Network Listeners
             listener = try NWListener(using: .tcp, on: 12345)
@@ -375,6 +390,17 @@ class AudioServer: ObservableObject {
         engine.stop()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         eqNode.removeTap(onBus: 0)
+        metricsListener?.cancel()
+        metricsListener = nil
+        metricsConnection?.cancel()
+        metricsConnection = nil
+        metricsTimer?.invalidate()
+        metricsTimer = nil
+        DispatchQueue.main.async {
+            self.pingMS = 0
+            self.packetLossPercent = 0.0
+        }
+
         listener?.cancel()
         listener = nil
         udpListener?.cancel()
@@ -410,5 +436,73 @@ class AudioServer: ObservableObject {
             freeifaddrs(ifaddr)
         }
         DispatchQueue.main.async { self.localIP = address ?? "Wi-Fi Disconnected" }
+    }
+    private func handleMetricsConnection(_ connection: NWConnection) {
+        if metricsConnection != nil { metricsConnection?.cancel() }
+        metricsConnection = connection
+        
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                self?.pingsSent = 0
+                self?.pingsReceived = 0
+                self?.metricsTimer?.invalidate()
+                // Fire ping every 1 second
+                DispatchQueue.main.async {
+                    self?.metricsTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+                        self?.sendPing()
+                    }
+                }
+            case .failed(_), .cancelled:
+                self?.metricsConnection = nil
+                self?.metricsTimer?.invalidate()
+                self?.metricsTimer = nil
+                DispatchQueue.main.async {
+                    self?.pingMS = 0
+                    self?.packetLossPercent = 0.0
+                }
+            default: break
+            }
+        }
+        connection.start(queue: .global(qos: .userInitiated))
+        receiveMetricsLoop(on: connection)
+    }
+    
+    private func sendPing() {
+        guard let connection = metricsConnection, connection.state == .ready else { return }
+        pingsSent += 1
+        
+        var timestamp = Date().timeIntervalSince1970
+        let data = Data(bytes: &timestamp, count: MemoryLayout<Double>.size)
+        
+        connection.send(content: data, completion: .contentProcessed({ _ in }))
+        
+        // Update packet loss immediately based on sent count
+        DispatchQueue.main.async {
+            if self.pingsSent > 0 {
+                self.packetLossPercent = 100.0 * (1.0 - Double(self.pingsReceived) / Double(self.pingsSent))
+            }
+        }
+    }
+    
+    private func receiveMetricsLoop(on connection: NWConnection) {
+        connection.receiveMessage { [weak self] (content, context, isComplete, error) in
+            if let data = content, data.count == MemoryLayout<Double>.size {
+                let sentTimestamp = data.withUnsafeBytes { $0.load(as: Double.self) }
+                let currentTimestamp = Date().timeIntervalSince1970
+                let rtt = Int((currentTimestamp - sentTimestamp) * 1000)
+                
+                self?.pingsReceived += 1
+                DispatchQueue.main.async {
+                    self?.pingMS = max(0, rtt)
+                    if let sent = self?.pingsSent, sent > 0 {
+                        self?.packetLossPercent = 100.0 * (1.0 - Double(self?.pingsReceived ?? 0) / Double(sent))
+                    }
+                }
+            }
+            if error == nil {
+                self?.receiveMetricsLoop(on: connection)
+            }
+        }
     }
 }

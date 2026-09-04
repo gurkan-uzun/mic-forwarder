@@ -12,8 +12,10 @@ namespace MicForwarderWindows
         private NetworkStream? _stream;
         
         private UdpClient? _udpClient;
+        private UdpClient? _metricsClient;
         
         private Thread? _receiveThread;
+        private Thread? _metricsThread;
         private bool _isRunning;
         
         private WaveOutEvent? _waveOut;
@@ -29,30 +31,13 @@ namespace MicForwarderWindows
             {
                 Logger.Log($"Connecting TCP Client to 127.0.0.1:12345...");
                 _client = new TcpClient();
-                _client.NoDelay = true; // Disable Nagle's algorithm for instant packet transmission
+                _client.NoDelay = true;
                 _client.Connect("127.0.0.1", 12345);
                 _stream = _client.GetStream();
                 Logger.Log("TCP Client connected successfully.");
 
-                // 48kHz, 16-bit, Mono (Must match iPhone's targetFormat)
-                var waveFormat = new WaveFormat(48000, 16, 1);
+                StartAudioAndMetrics(deviceNumber, "127.0.0.1");
                 
-                _waveProvider = new BufferedWaveProvider(waveFormat)
-                {
-                    BufferDuration = TimeSpan.FromSeconds(2),
-                    DiscardOnBufferOverflow = true
-                };
-
-                _waveOut = new WaveOutEvent 
-                { 
-                    DeviceNumber = deviceNumber,
-                    DesiredLatency = 60, // Reduced as requested for ultra-low latency
-                    NumberOfBuffers = 2
-                };
-                _waveOut.Init(_waveProvider);
-                _waveOut.Play();
-
-                _isRunning = true;
                 _receiveThread = new Thread(ReceiveLoop) { IsBackground = true };
                 _receiveThread.Start();
                 
@@ -61,42 +46,6 @@ namespace MicForwarderWindows
             catch (Exception ex)
             {
                 OnStatusChanged?.Invoke($"Connection failed: {ex.Message}");
-                StopReceiving();
-            }
-        }
-
-        private void ReceiveLoop()
-        {
-            byte[] buffer = new byte[4096];
-            try
-            {
-                while (_isRunning && _stream != null)
-                {
-                    int bytesRead = _stream.Read(buffer, 0, buffer.Length);
-                    if (bytesRead == 0)
-                    {
-                        OnStatusChanged?.Invoke("Connection closed by iPhone.");
-                        break; // Connection closed
-                    }
-                    
-                    // Critical: If the buffer grows too large (e.g. due to startup lag), clear it to kill the delay
-                    if (_waveProvider != null && _waveProvider.BufferedDuration.TotalMilliseconds > 90)
-                    {
-                        _waveProvider.ClearBuffer();
-                    }
-
-                    _waveProvider?.AddSamples(buffer, 0, bytesRead);
-                }
-            }
-            catch (Exception ex)
-            {
-                if (_isRunning)
-                {
-                    OnStatusChanged?.Invoke($"Stream error: {ex.Message}");
-                }
-            }
-            finally
-            {
                 StopReceiving();
             }
         }
@@ -111,28 +60,11 @@ namespace MicForwarderWindows
                 _udpClient = new UdpClient();
                 _udpClient.Connect(ipAddress, port);
                 
-                // Send handshake packet so the iPhone knows our IP and Port
                 byte[] handshake = System.Text.Encoding.ASCII.GetBytes("HELLO");
                 _udpClient.Send(handshake, handshake.Length);
 
-                // Setup NAudio exactly the same
-                var waveFormat = new WaveFormat(48000, 16, 1);
-                _waveProvider = new BufferedWaveProvider(waveFormat)
-                {
-                    BufferDuration = TimeSpan.FromSeconds(2),
-                    DiscardOnBufferOverflow = true
-                };
+                StartAudioAndMetrics(deviceNumber, ipAddress);
 
-                _waveOut = new WaveOutEvent 
-                { 
-                    DeviceNumber = deviceNumber,
-                    DesiredLatency = 60,
-                    NumberOfBuffers = 2
-                };
-                _waveOut.Init(_waveProvider);
-                _waveOut.Play();
-
-                _isRunning = true;
                 _receiveThread = new Thread(ReceiveUDPLoop) { IsBackground = true };
                 _receiveThread.Start();
                 
@@ -141,6 +73,92 @@ namespace MicForwarderWindows
             catch (Exception ex)
             {
                 OnStatusChanged?.Invoke($"UDP Connection failed: {ex.Message}");
+                StopReceiving();
+            }
+        }
+
+        private void StartAudioAndMetrics(int deviceNumber, string ipAddress)
+        {
+            var waveFormat = new WaveFormat(48000, 16, 1);
+            _waveProvider = new BufferedWaveProvider(waveFormat)
+            {
+                BufferDuration = TimeSpan.FromSeconds(2),
+                DiscardOnBufferOverflow = true
+            };
+
+            _waveOut = new WaveOutEvent 
+            { 
+                DeviceNumber = deviceNumber,
+                DesiredLatency = 60,
+                NumberOfBuffers = 2
+            };
+            _waveOut.Init(_waveProvider);
+            _waveOut.Play();
+
+            _isRunning = true;
+
+            try 
+            {
+                _metricsClient = new UdpClient();
+                _metricsClient.Connect(ipAddress, 12346);
+                byte[] handshake = System.Text.Encoding.ASCII.GetBytes("METRICS");
+                _metricsClient.Send(handshake, handshake.Length);
+
+                _metricsThread = new Thread(MetricsLoop) { IsBackground = true };
+                _metricsThread.Start();
+            } 
+            catch (Exception ex) 
+            {
+                Logger.Log($"Failed to start metrics client: {ex.Message}");
+            }
+        }
+
+        private void MetricsLoop()
+        {
+            try
+            {
+                System.Net.IPEndPoint remoteEP = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+                while (_isRunning && _metricsClient != null)
+                {
+                    byte[] data = _metricsClient.Receive(ref remoteEP);
+                    // Echo the exact packet back to the iPhone so it can calculate Ping
+                    _metricsClient.Send(data, data.Length);
+                }
+            }
+            catch (Exception)
+            {
+                // Normal on disconnect
+            }
+        }
+
+        private void ReceiveLoop()
+        {
+            byte[] buffer = new byte[4096];
+            try
+            {
+                while (_isRunning && _stream != null)
+                {
+                    int bytesRead = _stream.Read(buffer, 0, buffer.Length);
+                    if (bytesRead == 0)
+                    {
+                        OnStatusChanged?.Invoke("Connection closed by iPhone.");
+                        break;
+                    }
+                    
+                    if (_waveProvider != null && _waveProvider.BufferedDuration.TotalMilliseconds > 90)
+                    {
+                        _waveProvider.ClearBuffer();
+                    }
+
+                    _waveProvider?.AddSamples(buffer, 0, bytesRead);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (_isRunning) OnStatusChanged?.Invoke($"Stream error: {ex.Message}");
+            }
+            finally
+            {
                 StopReceiving();
             }
         }
@@ -164,10 +182,7 @@ namespace MicForwarderWindows
             }
             catch (Exception ex)
             {
-                if (_isRunning)
-                {
-                    OnStatusChanged?.Invoke($"UDP Stream error: {ex.Message}");
-                }
+                if (_isRunning) OnStatusChanged?.Invoke($"UDP Stream error: {ex.Message}");
             }
             finally
             {
@@ -181,6 +196,7 @@ namespace MicForwarderWindows
             _stream?.Close();
             _client?.Close();
             _udpClient?.Close();
+            _metricsClient?.Close();
             
             _waveOut?.Stop();
             _waveOut?.Dispose();
