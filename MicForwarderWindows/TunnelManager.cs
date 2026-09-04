@@ -12,7 +12,8 @@ namespace MicForwarderWindows
         {
             StopTunnel();
 
-            string iproxyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "iproxy.exe");
+            string architecture = Environment.Is64BitOperatingSystem ? "x64" : "x86";
+            string iproxyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "third_party", architecture, "iproxy.exe");
 
             var startInfo = new ProcessStartInfo
             {
