@@ -27,17 +27,17 @@ struct ContentView: View {
                     .font(.subheadline)
                     .foregroundColor(.blue)
                 
-                // Microphone Volume Indicator
-                ZStack(alignment: .bottom) {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.gray.opacity(0.2))
-                        .frame(width: 40, height: 150)
-                    
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.green)
-                        .frame(width: 40, height: 150 * CGFloat(min(audioServer.volumeLevel * 5, 1.0)))
-                        .animation(.linear(duration: 0.1), value: audioServer.volumeLevel)
+                // FFT Spectrum Visualizer
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(0..<20, id: \.self) { index in
+                        let value = CGFloat(audioServer.frequencyBuckets[index])
+                        Capsule()
+                            .fill(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? Color.gray : Color.green)
+                            .frame(width: 8, height: max(5, 100 * value))
+                            .animation(.linear(duration: 0.05), value: value)
+                    }
                 }
+                .frame(height: 100)
                 .padding(.vertical, 10)
                 
                 Text("Live: \(String(format: "%.3f", audioServer.volumeLevel))  |  \(String(format: "%.1f", audioServer.currentDB)) dB")
