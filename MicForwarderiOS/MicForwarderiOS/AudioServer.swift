@@ -7,6 +7,7 @@ class AudioServer: ObservableObject {
     @Published var isRunning = false
     @Published var connectionStatus = "Disconnected"
     @Published var volumeLevel: Float = 0.0
+    @Published var noiseGateThreshold: Float = 0.01 // Noise Gate threshold
     
     private let engine = AVAudioEngine()
     private var listener: NWListener?
@@ -19,8 +20,8 @@ class AudioServer: ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            // .videoRecording mode disables aggressive noise cancellation and selects a better microphone.
-            try session.setCategory(.record, mode: .videoRecording, options: [.allowBluetoothHFP])
+            // .voiceChat mode tunes the hardware for voice isolation and noise suppression
+            try session.setCategory(.record, mode: .voiceChat, options: [.allowBluetoothHFP])
             // Force hardware to 48kHz to perfectly match our Windows receiver without resampling
             try session.setPreferredSampleRate(48000.0)
             try session.setActive(true)
@@ -70,6 +71,14 @@ class AudioServer: ObservableObject {
             
             // 2. Setup Audio Engine
             let inputNode = engine.inputNode
+            
+            // Enable Apple's advanced Voice Processing (removes keyboard clicks, background noise, and echo)
+            do {
+                try inputNode.setVoiceProcessingEnabled(true)
+            } catch {
+                print("Warning: Could not enable Voice Processing")
+            }
+            
             let inputFormat = inputNode.inputFormat(forBus: 0)
             
             // Convert to 48kHz, 16-bit Mono PCM (Standard for raw audio transport)
@@ -86,13 +95,13 @@ class AudioServer: ObservableObject {
             inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] (buffer, time) in
                 guard let self = self else { return }
                 
-                // Calculate basic volume level for UI visualization
+                var avg: Float = 0
                 if let channelData = buffer.floatChannelData?[0] {
                     var sum: Float = 0
                     for i in 0..<Int(buffer.frameLength) {
                         sum += abs(channelData[i])
                     }
-                    let avg = sum / Float(buffer.frameLength)
+                    avg = sum / Float(buffer.frameLength)
                     DispatchQueue.main.async {
                         self.volumeLevel = avg
                     }
@@ -111,7 +120,16 @@ class AudioServer: ObservableObject {
                     
                     if let channelData = outBuffer.int16ChannelData?[0] {
                         let dataLength = Int(outBuffer.frameLength) * MemoryLayout<Int16>.size
-                        let data = Data(bytes: channelData, count: dataLength)
+                        
+                        let data: Data
+                        if avg < self.noiseGateThreshold {
+                            // Noise Gate active: Send perfect silence
+                            data = Data(count: dataLength)
+                        } else {
+                            // Threshold met: Send the actual microphone data
+                            data = Data(bytes: channelData, count: dataLength)
+                        }
+                        
                         self.activeConnection?.send(content: data, completion: .contentProcessed({ sendError in
                             if let e = sendError {
                                 print("Network Send Error: \(e)")

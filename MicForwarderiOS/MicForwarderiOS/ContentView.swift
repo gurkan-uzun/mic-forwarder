@@ -34,6 +34,16 @@ struct ContentView: View {
             }
             .padding()
             
+            // Noise Gate Control
+            VStack {
+                Text("Noise Gate Threshold: \(String(format: "%.3f", audioServer.noiseGateThreshold))")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Slider(value: $audioServer.noiseGateThreshold, in: 0...0.1, step: 0.001)
+                    .accentColor(.blue)
+            }
+            .padding(.horizontal)
+            
             // Start/Stop Button
             Button(action: {
                 audioServer.toggleServer()
