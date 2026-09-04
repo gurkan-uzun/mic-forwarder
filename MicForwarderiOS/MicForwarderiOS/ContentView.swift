@@ -36,6 +36,11 @@ struct ContentView: View {
                 }
                 .padding(.vertical, 10)
                 
+                Text("Live: \(String(format: "%.3f", audioServer.volumeLevel))  |  \(String(format: "%.1f", audioServer.currentDB)) dB")
+                    .font(.subheadline)
+                    .bold()
+                    .foregroundColor(audioServer.volumeLevel < audioServer.noiseGateThreshold || audioServer.volumeLevel > audioServer.maxVolumeCutoff ? .red : .green)
+                
                 VStack(spacing: 15) {
                     // Low Noise Gate Control
                     VStack(spacing: 5) {

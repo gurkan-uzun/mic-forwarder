@@ -43,8 +43,8 @@ namespace MicForwarderWindows
                 _waveOut = new WaveOutEvent 
                 { 
                     DeviceNumber = deviceNumber,
-                    DesiredLatency = 100, // Increased slightly from 50 to stop audio crackling/underruns
-                    NumberOfBuffers = 3
+                    DesiredLatency = 60, // Reduced as requested for ultra-low latency
+                    NumberOfBuffers = 2
                 };
                 _waveOut.Init(_waveProvider);
                 _waveOut.Play();
@@ -77,7 +77,7 @@ namespace MicForwarderWindows
                     }
                     
                     // Critical: If the buffer grows too large (e.g. due to startup lag), clear it to kill the delay
-                    if (_waveProvider != null && _waveProvider.BufferedDuration.TotalMilliseconds > 150)
+                    if (_waveProvider != null && _waveProvider.BufferedDuration.TotalMilliseconds > 90)
                     {
                         _waveProvider.ClearBuffer();
                     }

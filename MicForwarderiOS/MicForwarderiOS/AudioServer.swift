@@ -7,6 +7,7 @@ class AudioServer: ObservableObject {
     @Published var isRunning = false
     @Published var connectionStatus = "Disconnected"
     @Published var volumeLevel: Float = 0.0
+    @Published var currentDB: Float = -120.0 // dB readout
     @Published var noiseGateThreshold: Float = 0.01 // Noise Gate lower limit
     @Published var maxVolumeCutoff: Float = 1.0 // Loud noise upper limit
     
@@ -21,8 +22,8 @@ class AudioServer: ObservableObject {
     private func setupSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            // .voiceChat mode tunes the hardware for voice isolation and noise suppression
-            try session.setCategory(.record, mode: .voiceChat, options: [.allowBluetoothHFP])
+            // .voiceChat requires .playAndRecord category to avoid error -50
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .defaultToSpeaker])
             // Force hardware to 48kHz to perfectly match our Windows receiver without resampling
             try session.setPreferredSampleRate(48000.0)
             try session.setActive(true)
@@ -103,8 +104,11 @@ class AudioServer: ObservableObject {
                         sum += abs(channelData[i])
                     }
                     avg = sum / Float(buffer.frameLength)
+                    let db = avg > 0.000001 ? 20 * log10(avg) : -120.0
+                    
                     DispatchQueue.main.async {
                         self.volumeLevel = avg
+                        self.currentDB = db
                     }
                 }
                 
