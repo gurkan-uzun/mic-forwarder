@@ -63,7 +63,7 @@ class AudioServer: ObservableObject {
     
     private var listener: NWListener?
     private var udpListener: NWListener?
-    var activeConnection: NWConnection?
+    var activeTCPConnections: [NWConnection] = []
     var activeUDPConnection: NWConnection?
     // Metrics
     private var metricsListener: NWListener?
@@ -121,8 +121,15 @@ class AudioServer: ObservableObject {
 
             
             // Network Listeners
-            listener = try NWListener(using: .tcp, on: 12345)
+            let tcpOptions = NWProtocolTCP.Options()
+            tcpOptions.noDelay = true
+            let params = NWParameters(tls: nil, tcp: tcpOptions)
+            listener = try NWListener(using: params, on: 12345)
+            listener?.stateUpdateHandler = { state in
+                print(">>> TCP Listener state: \(state)")
+            }
             listener?.newConnectionHandler = { [weak self] connection in
+                print(">>> TCP Listener got NEW connection from: \(connection.endpoint)")
                 self?.handleNewConnection(connection)
             }
             listener?.start(queue: .global(qos: .userInitiated))
@@ -277,7 +284,7 @@ class AudioServer: ObservableObject {
             }
         }
         
-        if self.activeConnection?.state == .ready || self.activeUDPConnection?.state == .ready {
+        if !self.activeTCPConnections.isEmpty || self.activeUDPConnection?.state == .ready {
             let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: buffer.frameCapacity)!
             var error: NSError? = nil
             let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
@@ -305,8 +312,8 @@ class AudioServer: ObservableObject {
                     data = Data(bytes: channelData, count: dataLengthInBytes)
                 }
                 
-                if self.activeConnection?.state == .ready {
-                    self.activeConnection?.send(content: data, completion: .contentProcessed({ error in if let e = error { print("Send error: \(e)") } }))
+                for conn in self.activeTCPConnections where conn.state == .ready {
+                    conn.send(content: data, completion: .contentProcessed({ error in if let e = error { print("Send error: \(e)") } }))
                 }
                 if self.activeUDPConnection?.state == .ready {
                     self.activeUDPConnection?.send(content: data, completion: .contentProcessed({ error in if let e = error { print("Send error: \(e)") } }))
@@ -393,60 +400,38 @@ class AudioServer: ObservableObject {
     
     // ... Networking Code ...
     private func handleNewConnection(_ connection: NWConnection) {
-        if activeConnection != nil {
-            activeConnection?.cancel()
-            activeConnection = nil
-        }
-        activeConnection = connection
+        print(">>> handleNewConnection called, total connections: \(activeTCPConnections.count + 1)")
+        activeTCPConnections.append(connection)
+        
         connection.stateUpdateHandler = { [weak self] state in
+            print(">>> TCP Connection state changed: \(state)")
             DispatchQueue.main.async {
                 switch state {
-                case .setup:
-                    print("TCP State: setup")
-                case .waiting(let error):
-                    print("TCP State: waiting - \(error)")
-                case .preparing:
-                    print("TCP State: preparing")
-                case .ready: 
-                    print("TCP State: ready! Connected to Windows PC")
-                    self?.connectionStatus = "Connected to Windows PC"
+                case .ready:
+                    print(">>> TCP Connection READY - Windows PC connected!")
+                    self?.connectionStatus = "Connected to Windows PC (USB) [\((self?.activeTCPConnections.count ?? 0))]"
                 case .failed(let error):
-                    print("TCP State: failed - \(error)")
-                    if self?.activeConnection === connection {
-                        self?.activeConnection = nil
+                    print(">>> TCP Connection FAILED: \(error)")
+                    self?.activeTCPConnections.removeAll(where: { $0 === connection })
+                    if self?.activeTCPConnections.isEmpty == true {
                         self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
                     }
                 case .cancelled:
-                    print("TCP State: cancelled")
-                    if self?.activeConnection === connection {
-                        self?.activeConnection = nil
+                    print(">>> TCP Connection CANCELLED")
+                    self?.activeTCPConnections.removeAll(where: { $0 === connection })
+                    if self?.activeTCPConnections.isEmpty == true {
                         self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
                     }
-                @unknown default: 
-                    print("TCP State: unknown")
+                case .waiting(let error):
+                    print(">>> TCP Connection WAITING: \(error)")
+                default:
+                    print(">>> TCP Connection other state: \(state)")
                 }
             }
         }
         connection.start(queue: .global(qos: .userInitiated))
-        receiveTCPLoop(on: connection)
     }
-    
-    private func receiveTCPLoop(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] (data, context, isComplete, error) in
-            if let error = error {
-                print("TCP Receive error: \(error)")
-                connection.cancel()
-                return
-            }
-            if isComplete {
-                print("TCP Receive complete (EOF)")
-                connection.cancel()
-                return
-            }
-            self?.receiveTCPLoop(on: connection)
-        }
-    }
-    
+
     private func handleNewUDPConnection(_ connection: NWConnection) {
         if activeUDPConnection != nil {
             activeUDPConnection?.cancel()
@@ -460,7 +445,7 @@ class AudioServer: ObservableObject {
                 case .failed(_), .cancelled:
                     if self?.activeUDPConnection === connection {
                         self?.activeUDPConnection = nil
-                        if self?.activeConnection == nil && self?.isRunning == true {
+                        if self?.activeTCPConnections.isEmpty == true && self?.isRunning == true {
                             self?.connectionStatus = "Listening on port 12345..."
                         }
                     }
@@ -499,8 +484,8 @@ class AudioServer: ObservableObject {
         listener = nil
         udpListener?.cancel()
         udpListener = nil
-        activeConnection?.cancel()
-        activeConnection = nil
+        activeTCPConnections.forEach { $0.cancel() }
+        activeTCPConnections.removeAll()
         activeUDPConnection?.cancel()
         activeUDPConnection = nil
         DispatchQueue.main.async {

@@ -51,13 +51,13 @@ struct HomeView: View {
                 
                 Text(audioServer.connectionStatus)
                     .font(.headline)
-                    .foregroundColor(audioServer.activeConnection != nil || audioServer.activeUDPConnection != nil ? .green : .red)
+                    .foregroundColor(!audioServer.activeTCPConnections.isEmpty || audioServer.activeUDPConnection != nil ? .green : .red)
                 
                 Text("Wi-Fi IP: \(audioServer.localIP)")
                     .font(.subheadline)
                     .foregroundColor(.blue)
                 
-                if audioServer.activeUDPConnection != nil || audioServer.activeConnection != nil {
+                if audioServer.activeUDPConnection != nil || !audioServer.activeTCPConnections.isEmpty {
                     HStack(spacing: 15) {
                         Text("Ping: \(audioServer.pingMS) ms")
                         Text("Loss: \(String(format: "%.1f", audioServer.packetLossPercent))%")

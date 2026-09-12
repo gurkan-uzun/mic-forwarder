@@ -23,25 +23,25 @@ namespace MicForwarderWindows
         
         public event Action<string>? OnStatusChanged;
 
-        public void StartReceiving(int deviceNumber, string host = "127.0.0.1", int port = 12345)
+        public void StartReceiving(int deviceNumber)
         {
             if (_isRunning) return;
 
             try
             {
-                Logger.Log($"Connecting TCP client to {host}:{port}");
+                Logger.Log($"Connecting TCP Client to 127.0.0.1:12345...");
                 _client = new TcpClient();
                 _client.NoDelay = true;
-                _client.Connect(host, port);
+                _client.Connect("127.0.0.1", 12345);
                 _stream = _client.GetStream();
-                Logger.Log("TCP client connected successfully.");
+                Logger.Log("TCP Client connected successfully.");
 
-                StartAudioAndMetrics(deviceNumber, host);
+                StartAudioAndMetrics(deviceNumber, "127.0.0.1");
                 
                 _receiveThread = new Thread(ReceiveLoop) { IsBackground = true };
                 _receiveThread.Start();
                 
-                OnStatusChanged?.Invoke($"[Status] connected and streaming");
+                OnStatusChanged?.Invoke("Connected and streaming...");
             }
             catch (Exception ex)
             {
@@ -182,7 +182,7 @@ namespace MicForwarderWindows
             }
             catch (Exception ex)
             {
-                if (_isRunning) OnStatusChanged?.Invoke($"UDP Stream error: {ex.GetType().Name} - {ex.Message}");
+                if (_isRunning) OnStatusChanged?.Invoke($"UDP Stream error: {ex.Message}");
             }
             finally
             {

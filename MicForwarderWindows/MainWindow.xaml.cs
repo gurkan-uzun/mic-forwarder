@@ -96,7 +96,7 @@ namespace MicForwarderWindows
                     await System.Threading.Tasks.Task.Delay(1000);
 
                     UpdateStatus("Connecting to iPhone via USB (TCP)...");
-                    _audioReceiver.StartReceiving(deviceIndex);
+                    _audioReceiver.StartReceiving(deviceIndex, "127.0.0.1", 12345);
                 }
                 
                 _isConnected = true;
