@@ -219,7 +219,6 @@ class AudioServer: ObservableObject {
     
     private func processAudioBuffer(buffer: AVAudioPCMBuffer, converter: AVAudioConverter, targetFormat: AVAudioFormat) {
         var avg: Float = 0
-        print("Tap called, sending data...")
         if let channelData = buffer.floatChannelData?[0] {
             var sum: Float = 0
             let actualFrameLength = Int(buffer.frameLength)
@@ -307,10 +306,10 @@ class AudioServer: ObservableObject {
                 }
                 
                 if self.activeConnection?.state == .ready {
-                    self.activeConnection?.send(content: data, completion: .contentProcessed({ _ in }))
+                    self.activeConnection?.send(content: data, completion: .contentProcessed({ error in if let e = error { print("Send error: \(e)") } }))
                 }
                 if self.activeUDPConnection?.state == .ready {
-                    self.activeUDPConnection?.send(content: data, completion: .contentProcessed({ _ in }))
+                    self.activeUDPConnection?.send(content: data, completion: .contentProcessed({ error in if let e = error { print("Send error: \(e)") } }))
                 }
             }
         }
@@ -402,19 +401,29 @@ class AudioServer: ObservableObject {
         connection.stateUpdateHandler = { [weak self] state in
             DispatchQueue.main.async {
                 switch state {
-                case .ready: self?.connectionStatus = "Connected to Windows PC"
+                case .setup:
+                    print("TCP State: setup")
+                case .waiting(let error):
+                    print("TCP State: waiting - \(error)")
+                case .preparing:
+                    print("TCP State: preparing")
+                case .ready: 
+                    print("TCP State: ready! Connected to Windows PC")
+                    self?.connectionStatus = "Connected to Windows PC"
                 case .failed(let error):
-                    print("Connection failed: \(error)")
+                    print("TCP State: failed - \(error)")
                     if self?.activeConnection === connection {
                         self?.activeConnection = nil
                         self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
                     }
                 case .cancelled:
+                    print("TCP State: cancelled")
                     if self?.activeConnection === connection {
                         self?.activeConnection = nil
                         self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
                     }
-                default: break
+                @unknown default: 
+                    print("TCP State: unknown")
                 }
             }
         }
@@ -425,10 +434,12 @@ class AudioServer: ObservableObject {
     private func receiveTCPLoop(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] (data, context, isComplete, error) in
             if let error = error {
+                print("TCP Receive error: \(error)")
                 connection.cancel()
                 return
             }
             if isComplete {
+                print("TCP Receive complete (EOF)")
                 connection.cancel()
                 return
             }
@@ -562,7 +573,7 @@ class AudioServer: ObservableObject {
         var timestamp = Date().timeIntervalSince1970
         let data = Data(bytes: &timestamp, count: MemoryLayout<Double>.size)
         
-        connection.send(content: data, completion: .contentProcessed({ _ in }))
+        connection.send(content: data, completion: .contentProcessed({ error in if let e = error { print("Send error: \(e)") } }))
         
         // Update packet loss immediately based on sent count
         DispatchQueue.main.async {
