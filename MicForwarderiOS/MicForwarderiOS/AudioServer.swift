@@ -209,6 +209,7 @@ class AudioServer: ObservableObject {
             
             DispatchQueue.main.async {
                 self.isRunning = true
+                self.connectionStatus = "Listening on port 12345..."
             }
         } catch {
             connectionStatus = "Failed to start: \(error.localizedDescription)"
@@ -392,7 +393,10 @@ class AudioServer: ObservableObject {
     
     // ... Networking Code ...
     private func handleNewConnection(_ connection: NWConnection) {
-        if activeConnection != nil { connection.cancel(); return }
+        if activeConnection != nil {
+            activeConnection?.cancel()
+            activeConnection = nil
+        }
         activeConnection = connection
         connection.stateUpdateHandler = { [weak self] state in
             DispatchQueue.main.async {
@@ -400,29 +404,53 @@ class AudioServer: ObservableObject {
                 case .ready: self?.connectionStatus = "Connected to Windows PC"
                 case .failed(let error):
                     print("Connection failed: \(error)")
-                    self?.activeConnection = nil
-                    self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
+                    if self?.activeConnection === connection {
+                        self?.activeConnection = nil
+                        self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
+                    }
                 case .cancelled:
-                    self?.activeConnection = nil
-                    self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
+                    if self?.activeConnection === connection {
+                        self?.activeConnection = nil
+                        self?.connectionStatus = self?.isRunning == true ? "Listening on port 12345..." : "Disconnected"
+                    }
                 default: break
                 }
             }
         }
         connection.start(queue: .global(qos: .userInitiated))
+        receiveTCPLoop(on: connection)
+    }
+    
+    private func receiveTCPLoop(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { [weak self] (data, context, isComplete, error) in
+            if let error = error {
+                connection.cancel()
+                return
+            }
+            if isComplete {
+                connection.cancel()
+                return
+            }
+            self?.receiveTCPLoop(on: connection)
+        }
     }
     
     private func handleNewUDPConnection(_ connection: NWConnection) {
-        if activeUDPConnection != nil { activeUDPConnection?.cancel() }
+        if activeUDPConnection != nil {
+            activeUDPConnection?.cancel()
+            activeUDPConnection = nil
+        }
         activeUDPConnection = connection
         connection.stateUpdateHandler = { [weak self] state in
             DispatchQueue.main.async {
                 switch state {
                 case .ready: self?.connectionStatus = "UDP Connected (Wi-Fi)"
                 case .failed(_), .cancelled:
-                    self?.activeUDPConnection = nil
-                    if self?.activeConnection == nil && self?.isRunning == true {
-                        self?.connectionStatus = "Listening on port 12345..."
+                    if self?.activeUDPConnection === connection {
+                        self?.activeUDPConnection = nil
+                        if self?.activeConnection == nil && self?.isRunning == true {
+                            self?.connectionStatus = "Listening on port 12345..."
+                        }
                     }
                 default: break
                 }
