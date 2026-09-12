@@ -212,13 +212,14 @@ class AudioServer: ObservableObject {
                 self.connectionStatus = "Listening on port 12345..."
             }
         } catch {
-            connectionStatus = "Failed to start: \(error.localizedDescription)"
-            stopServer()
+            print("Failed to start server: \(error)")
+            stopServer(errorMessage: "Failed to start: \(error.localizedDescription)")
         }
     }
     
     private func processAudioBuffer(buffer: AVAudioPCMBuffer, converter: AVAudioConverter, targetFormat: AVAudioFormat) {
         var avg: Float = 0
+        print("Tap called, sending data...")
         if let channelData = buffer.floatChannelData?[0] {
             var sum: Float = 0
             let actualFrameLength = Int(buffer.frameLength)
@@ -466,7 +467,7 @@ class AudioServer: ObservableObject {
         }
     }
     
-    private func stopServer() {
+    private func stopServer(errorMessage: String? = nil) {
         micFeedPlayer.stop()
         engine.inputNode.removeTap(onBus: 0)
         customMixerNode.removeTap(onBus: 0)
@@ -493,7 +494,11 @@ class AudioServer: ObservableObject {
         activeUDPConnection = nil
         DispatchQueue.main.async {
             self.isRunning = false
-            self.connectionStatus = "Disconnected"
+            if let error = errorMessage {
+                self.connectionStatus = error
+            } else {
+                self.connectionStatus = "Disconnected"
+            }
             self.volumeLevel = 0
         }
     }
